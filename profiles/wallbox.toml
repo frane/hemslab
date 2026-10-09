@@ -1,0 +1,23 @@
+name = "wallbox"
+description = "11 kW wallbox (3 × 16 A). LPC and MPC. A car arrives and leaves; a limit below 6 A pauses charging."
+
+mpc = true
+
+[device]
+brand = "hemslab"
+model = "Wallbox"
+device_type = "ChargingStation"
+entity_type = "EVSE"
+
+[limit]
+use_case = "lpc"
+failsafe_watts = 4200
+nominal_max_watts = 11000
+
+[model]
+kind = "wallbox"
+phases = 3
+min_amps = 6
+max_amps = 16
+plugged_s = 3600
+away_s = 900

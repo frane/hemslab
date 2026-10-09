@@ -1,0 +1,22 @@
+name = "heat-pump"
+description = "Air-to-water heat pump, 9 kW electrical. LPC and MPC. Cycles, modulates down under a limit, stops below its minimum."
+
+mpc = true
+
+[device]
+brand = "hemslab"
+model = "HeatPump"
+device_type = "HeatGenerationSystem"
+entity_type = "HeatPumpAppliance"
+
+[limit]
+use_case = "lpc"
+failsafe_watts = 4200
+nominal_max_watts = 9000
+
+[model]
+kind = "heat_pump"
+rated_watts = 6000
+min_watts = 1500
+on_s = 1200
+off_s = 600

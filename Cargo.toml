@@ -1,0 +1,29 @@
+[package]
+name = "hemslab"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Simulated energy devices for HEMS developers: heat pumps, inverters, wallboxes and replayed real devices over EEBUS"
+repository = "https://github.com/frane/hemslab"
+authors = ["Frane Bandov <frane.bandov@gmail.com>"]
+readme = "README.md"
+keywords = ["eebus", "hems", "simulator", "lpc", "14a"]
+categories = ["simulation", "network-programming", "command-line-utilities"]
+
+[dependencies]
+eebus = { version = "0.10", default-features = false, features = ["std", "runtime", "mdns", "ring", "cert", "tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "signal", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+strip = true

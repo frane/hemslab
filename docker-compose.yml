@@ -1,0 +1,15 @@
+services:
+  hemslab:
+    image: fbandov/hemslab:latest
+    # mDNS needs the host network.
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    environment:
+      # Built-in profile names or files under /data, comma-separated.
+      HEMSLAB_DEVICES: heat-pump,pv-inverter,wallbox,elli-charger-2
+      # HEMSLAB_PORT: "4712"
+      # HEMSLAB_DIAL: "192.168.1.10:4711"   # an energy manager that does not browse mDNS
+      # HEMSLAB_ANNOUNCE_IP: "192.168.1.20"
+    command: ["run"]

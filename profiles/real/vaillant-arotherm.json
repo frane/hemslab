@@ -1,0 +1,266 @@
+{
+  "name": "vaillant-arotherm",
+  "description": "Vaillant aroTHERM VWL 75/6 A: structure as recorded by enbility/devices (no use-case data)",
+  "source": "vaillant_arotherm-vwl-75_6a.discovery.json",
+  "brand": null,
+  "model": null,
+  "device_address": "d:_i:42332_xxxxxxxxxxxxxxxxxxxxxxxxxxxx_0",
+  "discovery": [
+    {
+      "nodeManagementDetailedDiscoveryData": [
+        {
+          "specificationVersionList": [
+            {
+              "specificationVersion": [
+                "1.1.1"
+              ]
+            }
+          ]
+        },
+        {
+          "deviceInformation": [
+            {
+              "description": [
+                {
+                  "deviceAddress": [
+                    {
+                      "device": "d:_i:42332_xxxxxxxxxxxxxxxxxxxxxxxxxxxx_0"
+                    }
+                  ]
+                },
+                {
+                  "deviceType": "Generic"
+                },
+                {
+                  "networkFeatureSet": "gateway"
+                },
+                {
+                  "lastStateChange": "added"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "entityInformation": [
+            [
+              {
+                "description": [
+                  {
+                    "entityAddress": [
+                      {
+                        "entity": [
+                          0
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "entityType": "DeviceInformation"
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "description": [
+                  {
+                    "entityAddress": [
+                      {
+                        "entity": [
+                          1
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "entityType": "Generic"
+                  }
+                ]
+              }
+            ]
+          ]
+        },
+        {
+          "featureInformation": [
+            [
+              {
+                "description": [
+                  {
+                    "featureAddress": [
+                      {
+                        "entity": [
+                          0
+                        ]
+                      },
+                      {
+                        "feature": 0
+                      }
+                    ]
+                  },
+                  {
+                    "featureType": "NodeManagement"
+                  },
+                  {
+                    "role": "special"
+                  },
+                  {
+                    "supportedFunction": [
+                      [
+                        {
+                          "function": "nodeManagementDetailedDiscoveryData"
+                        },
+                        {
+                          "possibleOperations": [
+                            {
+                              "read": []
+                            }
+                          ]
+                        }
+                      ],
+                      [
+                        {
+                          "function": "nodeManagementSubscriptionRequestCall"
+                        },
+                        {
+                          "possibleOperations": []
+                        }
+                      ],
+                      [
+                        {
+                          "function": "nodeManagementBindingRequestCall"
+                        },
+                        {
+                          "possibleOperations": []
+                        }
+                      ],
+                      [
+                        {
+                          "function": "nodeManagementSubscriptionDeleteCall"
+                        },
+                        {
+                          "possibleOperations": []
+                        }
+                      ],
+                      [
+                        {
+                          "function": "nodeManagementBindingDeleteCall"
+                        },
+                        {
+                          "possibleOperations": []
+                        }
+                      ],
+                      [
+                        {
+                          "function": "nodeManagementSubscriptionData"
+                        },
+                        {
+                          "possibleOperations": [
+                            {
+                              "read": []
+                            }
+                          ]
+                        }
+                      ],
+                      [
+                        {
+                          "function": "nodeManagementBindingData"
+                        },
+                        {
+                          "possibleOperations": [
+                            {
+                              "read": []
+                            }
+                          ]
+                        }
+                      ],
+                      [
+                        {
+                          "function": "nodeManagementDestinationListData"
+                        },
+                        {
+                          "possibleOperations": [
+                            {
+                              "read": []
+                            }
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "description": [
+                  {
+                    "featureAddress": [
+                      {
+                        "entity": [
+                          0
+                        ]
+                      },
+                      {
+                        "feature": 1
+                      }
+                    ]
+                  },
+                  {
+                    "featureType": "DeviceClassification"
+                  },
+                  {
+                    "role": "server"
+                  },
+                  {
+                    "supportedFunction": [
+                      [
+                        {
+                          "function": "deviceClassificationManufacturerData"
+                        },
+                        {
+                          "possibleOperations": [
+                            {
+                              "read": []
+                            }
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "description": [
+                  {
+                    "featureAddress": [
+                      {
+                        "entity": [
+                          1
+                        ]
+                      },
+                      {
+                        "feature": 0
+                      }
+                    ]
+                  },
+                  {
+                    "featureType": "Generic"
+                  },
+                  {
+                    "role": "client"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "use_cases": null,
+  "data": [],
+  "timeline": []
+}

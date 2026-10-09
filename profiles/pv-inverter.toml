@@ -1,0 +1,22 @@
+name = "pv-inverter"
+description = "PV inverter, 10 kWp. LPP and MPC. Production follows the sun (local time) with passing clouds; a limit curtails it."
+
+mpc = true
+
+[device]
+brand = "hemslab"
+model = "PvInverter"
+device_type = "Inverter"
+entity_type = "Inverter"
+
+[limit]
+use_case = "lpp"
+failsafe_watts = 7000
+nominal_max_watts = 10000
+
+[model]
+kind = "pv_inverter"
+peak_watts = 9500
+sunrise_h = 6.5
+sunset_h = 19.5
+clouds = true
