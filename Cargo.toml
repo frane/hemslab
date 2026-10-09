@@ -21,9 +21,13 @@ toml = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 
 [dev-dependencies]
 tempfile = "3"
 
 [profile.release]
 strip = true
+
+[patch.crates-io]
+eebus = { path = "../ext/eebus" }

@@ -10,13 +10,27 @@ Keine Hardware, kein Installateur, kein Warten auf Sonne.
 
 ## Schnellstart
 
+Das Programm für dein System aus dem [neuesten Release](https://github.com/frane/hemslab/releases/latest) laden und starten:
+
 ```bash
-docker run --rm --network host -v ./data:/data fbandov/hemslab run heat-pump pv-inverter wallbox elli-charger-2
+./hemslab run heat-pump pv-inverter wallbox elli-charger-2
 ```
+
+Dann **http://localhost:8080** öffnen.
 
 Jedes Gerät bekommt eine eigene SKI und einen eigenen Port (4712, 4713, …) und kündigt sich per mDNS an. Der Energiemanager findet sie wie echte Geräte. Standardmäßig koppeln sie sich mit jedem, der anfragt.
 
-Im Log steht jeder Schreibbefehl des Energiemanagers als lesbares JSON und daneben, wie das Gerät reagiert.
+![hemslab-Weboberfläche](docs/ui.png)
+
+Die Weboberfläche zeigt pro Gerät:
+- die Leistung
+- das geltende Limit (rote gestrichelte Linie)
+- den LPC/LPP-Zustand
+- jeden Schreibbefehl, den das Gerät bekommen hat
+
+In der Oberfläche kannst du:
+- Limits setzen und aufheben. Das läuft über einen eingebauten Test-Energiemanager, du brauchst also kein HEMS zum Ausprobieren.
+- die Situation des Geräts ändern: Auto an- und abstecken, Sonne, Wolken oder Nacht, Wärmepumpe an oder aus.
 
 ## Geräte
 
@@ -53,12 +67,14 @@ Generische Profile sind TOML-Dateien. Am einfachsten eine aus [`profiles/`](prof
 
 ## Optionen
 
-Siehe [README.md](README.md#options). Alle Optionen gibt es auch als Umgebungsvariable (`HEMSLAB_…`), die Geräteliste als `HEMSLAB_DEVICES`. Für Docker Compose liegt eine [`docker-compose.yml`](docker-compose.yml) bei. Docker braucht Host-Networking für mDNS.
+Siehe [README.md](README.md#options). Alle Optionen gibt es auch als Umgebungsvariable (`HEMSLAB_…`), die Geräteliste als `HEMSLAB_DEVICES`. Aus dem Quellcode: `cargo install --git https://github.com/frane/hemslab`. Für ein NAS gibt es ein Docker-Image (`docker-compose.yml`, Host-Networking für mDNS).
 
 ## Getestet gegen
 
-- den Energy Guard und die Monitoring Appliance der Crate `eebus`: LPC-Limit, Aufhebung und MPC-Messwerte, für generische und nachgespielte Geräte
-- eebus-go (der Stack hinter evcc) als Energy Guard: Die Wallbox pausiert bei 3000 W, lädt bei 7000 W mit 10 A und nach der Aufhebung mit 16 A. MPC-Werte kommen jede Sekunde an.
+- **Energy Guard und Monitoring Appliance der Crate `eebus`:** LPC-Limit, Aufhebung und MPC-Messwerte für generische und nachgespielte Geräte, dazu die Weboberfläche.
+- **eebus-go als Energy Guard** (der Stack hinter evcc): Die Wallbox pausiert bei 3000 W, lädt bei 7000 W mit 10 A und nach der Aufhebung mit 16 A.
+- **elli-eebus** (die Bibliothek hinter ha-elli): Sie liest die nachgespielte Elli wie die echte und setzt Limit und Failsafe.
+- **Die ganze Kette ohne Hardware:** eebus-go → elli-eebus-proxy → nachgespielte Elli. Die Limits 3000 W, 0 W und die Aufhebung kommen an.
 
 ## Lizenz
 

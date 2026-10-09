@@ -41,6 +41,12 @@ enum Command {
         /// SKI of an energy manager to trust in advance.
         #[arg(long, env = "HEMSLAB_TRUST", value_delimiter = ',')]
         trust: Vec<String>,
+        /// Address of the web UI.
+        #[arg(long, env = "HEMSLAB_UI", default_value = "0.0.0.0:8080")]
+        ui: std::net::SocketAddr,
+        /// No web UI and no test energy manager.
+        #[arg(long, env = "HEMSLAB_NO_UI", value_parser = clap::builder::BoolishValueParser::new())]
+        no_ui: bool,
         /// Dial an energy manager instead of waiting for it: `host:port` or
         /// `SKI@host:port` (all devices).
         #[arg(long, env = "HEMSLAB_DIAL", value_delimiter = ',')]
@@ -96,7 +102,12 @@ async fn main() {
             strict,
             trust,
             dial,
-        } => run(profiles, state_dir, port, !no_mdns, announce_ip, strict, trust, dial).await,
+            ui,
+            no_ui,
+        } => {
+            run(profiles, state_dir, port, !no_mdns, announce_ip, strict, trust, dial, (!no_ui).then_some(ui))
+                .await
+        }
         Command::Profiles => {
             list();
             Ok(())
@@ -128,16 +139,31 @@ async fn run(
     strict: bool,
     trust: Vec<String>,
     dial: Vec<String>,
+    ui: Option<std::net::SocketAddr>,
 ) -> Result<(), String> {
     let dial: Vec<device::Dial> = dial
         .iter()
         .map(|a| a.parse().map_err(|e| format!("--dial {a}: {e}")))
         .collect::<Result<_, _>>()?;
-    let trust: Vec<Ski> = trust
+    let mut trust: Vec<Ski> = trust
         .iter()
         .map(|s| s.parse().map_err(|e| format!("--trust {s}: {e}")))
         .collect::<Result<_, _>>()?;
     let (stop_tx, stop_rx) = watch::channel(false);
+    let registry = std::sync::Arc::new(hemslab::view::Registry::default());
+    let cem = match ui {
+        Some(_) => {
+            let cem = hemslab::cem::start(registry.clone(), stop_rx.clone())?;
+            // The test energy manager is always welcome, even with --strict.
+            if let Ok(status) = cem.status.lock()
+                && let Ok(ski) = status.ski.parse()
+            {
+                trust.push(ski);
+            }
+            Some(cem)
+        }
+        None => None,
+    };
     let mut tasks = Vec::new();
     let mut counts = std::collections::HashMap::<String, usize>::new();
     for (index, spec) in names.iter().enumerate() {
@@ -159,10 +185,20 @@ async fn run(
         };
         tasks.push(tokio::spawn(device::run(spec, tx, stop_rx.clone())));
         let started = rx.await.map_err(|_| "a device failed to start")??;
+        registry.add(started.handle.clone());
         println!(
             "{:<32} port {:<5}  SKI {}",
             started.instance, started.port, started.ski
         );
+    }
+    if let (Some(address), Some(cem)) = (ui, cem) {
+        let bound = hemslab::ui::serve(address, registry.clone(), cem).await?;
+        let shown = if bound.ip().is_unspecified() {
+            format!("http://localhost:{}", bound.port())
+        } else {
+            format!("http://{bound}")
+        };
+        println!("\nWeb UI: {shown}");
     }
     println!(
         "\n{} device(s) running. {}Ctrl-C stops.\n",

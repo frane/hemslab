@@ -283,3 +283,36 @@ impl Timeline {
         Some(self.lap_start + *at)
     }
 }
+
+/// The total active power a replayed device currently reports, if it has a
+/// `Measurement` server with an `acPowerTotal` power measurement.
+pub fn total_power(engine: &Engine) -> Option<f64> {
+    use eebus::model::FeatureType;
+    for (_, feature) in engine.device().features() {
+        if feature.feature_type() != &FeatureType::Measurement {
+            continue;
+        }
+        let Some(CmdData::MeasurementDescriptionListData(descriptions)) =
+            feature.data(&Function::MeasurementDescriptionListData)
+        else {
+            continue;
+        };
+        let id = descriptions.measurement_description_data.iter().flatten().find_map(|d| {
+            let power = d.measurement_type.as_ref().is_some_and(|t| t.as_str() == "power");
+            let total = d.scope_type.as_ref().is_some_and(|t| t.as_str() == "acPowerTotal");
+            (power && total).then_some(d.measurement_id).flatten()
+        })?;
+        let Some(CmdData::MeasurementListData(list)) = feature.data(&Function::MeasurementListData)
+        else {
+            continue;
+        };
+        return list
+            .measurement_data
+            .iter()
+            .flatten()
+            .find(|m| m.measurement_id == Some(id))
+            .and_then(|m| m.value.as_ref())
+            .and_then(|v| v.to_f64());
+    }
+    None
+}

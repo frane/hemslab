@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hemslab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bench: #e6eaee;
+  --panel: #fbfcfd;
+  --ink: #17202a;
+  --muted: #66717d;
+  --rule: #cfd6dd;
+  --draw: #2563c9;
+  --feed: #c98a00;
+  --replay: #7d8a97;
+  --limit: #d2353f;
+  --ok: #2b7a4b;
+  --grid: #e8ecf0;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bench: #11161b;
+    --panel: #192028;
+    --ink: #e4e9ee;
+    --muted: #8f9aa6;
+    --rule: #2c3640;
+    --draw: #5b8ff0;
+    --feed: #e2a91c;
+    --replay: #8794a1;
+    --limit: #f0565f;
+    --ok: #4cb37a;
+    --grid: #222b34;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bench);
+  color: var(--ink);
+  font: 15px/1.45 Barlow, system-ui, sans-serif;
+}
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 20px 24px 8px;
+}
+header h1 {
+  margin: 0;
+  font: 600 26px/1 "Barlow Semi Condensed", Barlow, sans-serif;
+  letter-spacing: -0.01em;
+}
+header h1 small { font: 400 15px Barlow, sans-serif; color: var(--muted); margin-left: 10px; letter-spacing: 0; }
+.cem { color: var(--muted); font-size: 14px; }
+.cem b { color: var(--ink); font-weight: 500; }
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  gap: 16px;
+  padding: 12px 24px 32px;
+}
+.device {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-left: 5px solid var(--accent);
+  border-radius: 6px;
+  padding: 16px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.device.consumption { --accent: var(--draw); }
+.device.production { --accent: var(--feed); }
+.device.replay { --accent: var(--replay); }
+.head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.head h2 { margin: 0; font: 600 18px/1.2 Barlow, sans-serif; }
+.head .where { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.about { margin: -8px 0 0; color: var(--muted); font-size: 13.5px; line-height: 1.35; }
+.reading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.watts {
+  font: 600 40px/1 "Barlow Semi Condensed", Barlow, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.watts span { font-size: 18px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.watts.none { color: var(--muted); }
+.status { color: var(--muted); font-size: 14px; }
+.state { text-align: right; font-size: 14px; }
+.state .name { font-weight: 600; }
+.state .name.limited, .state .name.failsafe { color: var(--limit); }
+.state .name.free { color: var(--ok); }
+.state .ceiling { color: var(--muted); font-variant-numeric: tabular-nums; }
+svg.chart { width: 100%; height: 150px; display: block; }
+svg.chart .area { fill: var(--accent); opacity: 0.16; }
+svg.chart .line { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+svg.chart .limit { fill: none; stroke: var(--limit); stroke-width: 1.6; stroke-dasharray: 5 4; }
+svg.chart .grid { stroke: var(--grid); stroke-width: 1; }
+svg.chart text { fill: var(--muted); font: 11px Barlow, sans-serif; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--rule); background: transparent; color: var(--ink); padding: 5px 11px; font: 500 13.5px Barlow, sans-serif; cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.limitform { display: inline-flex; gap: 6px; align-items: center; }
+.limitform input {
+  width: 92px; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 5px;
+  background: var(--panel); color: var(--ink); font: 14px Barlow, sans-serif; font-variant-numeric: tabular-nums;
+}
+.limitform button {
+  padding: 5px 11px; border-radius: 5px; font: 500 13.5px Barlow, sans-serif; cursor: pointer;
+  border: 1px solid var(--limit); background: var(--limit); color: #fff;
+}
+.limitform .release { background: transparent; color: var(--ink); border-color: var(--rule); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--draw); outline-offset: 2px; }
+.log { margin: 0; padding: 8px 0 0; border-top: 1px solid var(--rule); list-style: none; font-size: 13px; max-height: 148px; overflow: auto; }
+.log li { display: grid; grid-template-columns: 58px 1fr; gap: 8px; padding: 1px 0; }
+.log time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.log span { overflow-wrap: anywhere; }
+.log li.write span { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.empty { padding: 48px 24px; color: var(--muted); }
+.offline { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--limit); color: #fff; padding: 8px 14px; border-radius: 5px; display: none; }
+@media (max-width: 520px) {
+  header, main { padding-left: 16px; padding-right: 16px; }
+  .watts { font-size: 34px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>hemslab<small id="summary"></small></h1>
+  <div class="cem" id="cem"></div>
+</header>
+<main id="devices"><p class="empty">Waiting for devices…</p></main>
+<div class="offline" id="offline">hemslab is not reachable. Is it still running?</div>
+<template id="device">
+  <article class="device">
+    <div class="head"><h2></h2><span class="where"></span></div>
+    <p class="about"></p>
+    <div class="reading">
+      <div><div class="watts"></div><div class="status"></div></div>
+      <div class="state"><div class="name"></div><div class="ceiling"></div></div>
+    </div>
+    <svg class="chart" viewBox="0 0 400 150" preserveAspectRatio="none" role="img"></svg>
+    <div class="controls">
+      <div class="seg" role="group"></div>
+      <form class="limitform">
+        <input type="number" min="0" step="100" inputmode="numeric" placeholder="watts">
+        <button type="submit">Set limit</button>
+        <button type="button" class="release">Release</button>
+      </form>
+    </div>
+    <ul class="log"></ul>
+  </article>
+</template>
+<script>
+const WINDOW = 600; // seconds shown
+const cards = new Map();
+const fmt = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
+
+const STATES = {
+  "init": ["Starting up", "failsafe"],
+  "limited": ["Limited", "limited"],
+  "unlimited/controlled": ["Not limited", "free"],
+  "failsafe": ["Failsafe", "failsafe"],
+  "unlimited/autonomous": ["On its own", "free"],
+};
+
+function post(path, body) {
+  return fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+}
+
+function card(d) {
+  let c = cards.get(d.instance);
+  if (c) return c;
+  const node = document.getElementById("device").content.firstElementChild.cloneNode(true);
+  const v = d.view;
+  node.classList.add(d.kind === "replay" ? "replay" : (v.direction || "consumption"));
+  node.querySelector("h2").textContent = d.instance;
+  node.querySelector(".where").textContent = `port ${d.port}`;
+  node.querySelector(".where").title = `SKI ${d.ski}`;
+  node.querySelector(".about").textContent = d.description;
+  const seg = node.querySelector(".seg");
+  seg.setAttribute("aria-label", "Mode");
+  if (v.modes.length) {
+    for (const m of v.modes) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = m;
+      b.onclick = () => post(`/api/devices/${d.instance}/mode`, { mode: m });
+      seg.append(b);
+    }
+  } else {
+    seg.remove();
+  }
+  const form = node.querySelector(".limitform");
+  const input = form.querySelector("input");
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const w = Number(input.value);
+    if (input.value !== "" && w >= 0) post(`/api/devices/${d.instance}/limit`, { watts: w });
+  };
+  form.querySelector(".release").onclick = () => post(`/api/devices/${d.instance}/limit`, { watts: null });
+  if (v.direction) input.value = v.direction === "production" ? 3000 : 4200;
+  c = { node, seen: 0 };
+  cards.set(d.instance, c);
+  return c;
+}
+
+function chart(svg, v) {
+  const now = Date.now() / 1000;
+  const pts = v.history.filter(p => p[0] > now - WINDOW);
+  const sign = v.direction === "production" ? -1 : 1;
+  let top = Math.max(v.nominal_max_watts || 0, ...pts.map(p => Math.abs(p[1])), ...pts.map(p => p[2] || 0), 1000);
+  top = Math.ceil(top * 1.1 / 1000) * 1000;
+  const W = 400, H = 150, x = t => W - (now - t) / WINDOW * W, y = w => H - 14 - Math.max(0, w) / top * (H - 30);
+  let out = "";
+  for (const f of [0.5, 1]) {
+    const yy = y(top * f);
+    out += `<line class="grid" x1="0" x2="${W}" y1="${yy}" y2="${yy}"/><text x="4" y="${yy - 3}">${fmt.format(top * f / 1000)} kW</text>`;
+  }
+  out += `<line class="grid" x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>`;
+  out += `<text x="4" y="${H - 2}">10 min ago</text><text x="${W - 4}" y="${H - 2}" text-anchor="end">now</text>`;
+  if (pts.length > 1) {
+    const line = pts.map(p => `${x(p[0]).toFixed(1)},${y(sign * p[1]).toFixed(1)}`).join(" ");
+    out += `<polygon class="area" points="${x(pts[0][0]).toFixed(1)},${y(0)} ${line} ${x(pts.at(-1)[0]).toFixed(1)},${y(0)}"/>`;
+    out += `<polyline class="line" points="${line}"/>`;
+    // The limit as a ceiling: drawn only where one was in force.
+    let seg = [];
+    const flush = () => { if (seg.length > 1) out += `<polyline class="limit" points="${seg.join(" ")}"/>`; seg = []; };
+    for (const p of pts) {
+      if (p[2] == null) { flush(); continue; }
+      seg.push(`${x(p[0]).toFixed(1)},${y(p[2]).toFixed(1)}`);
+    }
+    flush();
+  }
+  svg.innerHTML = out;
+  svg.setAttribute("aria-label", `Power over the last 10 minutes, up to ${fmt.format(top)} W`);
+}
+
+function render(state) {
+  const main = document.getElementById("devices");
+  if (state.devices.length && main.querySelector(".empty")) main.textContent = "";
+  for (const d of state.devices) {
+    const c = card(d);
+    if (!c.node.isConnected) main.append(c.node);
+    const v = d.view, n = c.node;
+    const w = n.querySelector(".watts");
+    if (v.watts == null) {
+      w.className = "watts none";
+      w.textContent = "–";
+    } else {
+      w.className = "watts";
+      w.innerHTML = `${fmt.format(Math.abs(v.watts))}<span>W</span>`;
+    }
+    const producing = v.watts != null && v.watts < 0;
+    n.querySelector(".status").textContent = v.status + (producing ? ", feeding in" : "");
+    const st = STATES[v.state] || [d.kind === "replay" ? "Recorded device" : "", ""];
+    const name = n.querySelector(".state .name");
+    name.textContent = st[0];
+    name.className = "name " + st[1];
+    n.querySelector(".ceiling").textContent = v.limit_watts != null
+      ? `at most ${fmt.format(v.limit_watts)} W`
+      : (v.state ? "" : `${v.peers.length} energy manager${v.peers.length === 1 ? "" : "s"} connected`);
+    for (const b of n.querySelectorAll(".seg button")) b.setAttribute("aria-pressed", String(b.textContent === v.mode));
+    chart(n.querySelector("svg"), v);
+    const log = n.querySelector(".log");
+    const lines = v.log.slice(-30).reverse();
+    log.innerHTML = "";
+    for (const [t, text] of lines) {
+      const li = document.createElement("li");
+      if (text.startsWith("write to")) li.className = "write";
+      const time = document.createElement("time");
+      time.textContent = new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+      const span = document.createElement("span");
+      span.textContent = text;
+      li.append(time, span);
+      log.append(li);
+    }
+  }
+  const cem = state.cem;
+  document.getElementById("summary").textContent = `${state.devices.length} device${state.devices.length === 1 ? "" : "s"}`;
+  document.getElementById("cem").innerHTML = cem.connected.length
+    ? `Test energy manager connected to <b>${cem.connected.join(", ")}</b>`
+    : "Set a limit on a device to connect the test energy manager";
+}
+
+async function tick() {
+  try {
+    const r = await fetch("/api/state");
+    render(await r.json());
+    document.getElementById("offline").style.display = "none";
+  } catch {
+    document.getElementById("offline").style.display = "block";
+  }
+  setTimeout(tick, 1000);
+}
+tick();
+</script>
+</body>
+</html>

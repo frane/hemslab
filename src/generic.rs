@@ -185,6 +185,8 @@ pub struct Reading {
 pub struct Behaviour {
     model: Model,
     elapsed: Duration,
+    /// An override from the UI: `auto` follows the model's own pattern.
+    mode: &'static str,
     pub consumed_wh: f64,
     pub produced_wh: f64,
 }
@@ -194,8 +196,33 @@ impl Behaviour {
         Self {
             model,
             elapsed: Duration::ZERO,
+            mode: "auto",
             consumed_wh: 0.0,
             produced_wh: 0.0,
+        }
+    }
+
+    /// The modes this device can be put in, the first being `auto`.
+    pub fn modes(&self) -> &'static [&'static str] {
+        match self.model {
+            Model::HeatPump { .. } => &["auto", "on", "off"],
+            Model::PvInverter { .. } => &["auto", "sunny", "cloudy", "night"],
+            Model::Wallbox { .. } => &["auto", "plugged", "away"],
+        }
+    }
+
+    pub fn mode(&self) -> &'static str {
+        self.mode
+    }
+
+    /// Switches mode; unknown modes are refused.
+    pub fn set_mode(&mut self, mode: &str) -> bool {
+        match self.modes().iter().find(|m| **m == mode) {
+            Some(m) => {
+                self.mode = m;
+                true
+            }
+            None => false,
         }
     }
 
@@ -211,8 +238,13 @@ impl Behaviour {
                 off_s,
             } => {
                 let cycle = (*on_s + *off_s).max(1) as f64;
-                if t % cycle >= *on_s as f64 {
-                    Reading { watts: 0.0, phases: 3, status: "idle (cycle off)" }
+                let running = match self.mode {
+                    "on" => true,
+                    "off" => false,
+                    _ => t % cycle < *on_s as f64,
+                };
+                if !running {
+                    Reading { watts: 0.0, phases: 3, status: "idle" }
                 } else {
                     // A compressor's draw wanders a little.
                     let wanted = rated_watts * (1.0 + 0.03 * (t / 37.0).sin());
@@ -230,12 +262,17 @@ impl Behaviour {
                 clouds,
             } => {
                 let day = (hour_of_day - sunrise_h) / (sunset_h - sunrise_h);
-                let sun = if (0.0..=1.0).contains(&day) {
-                    (std::f64::consts::PI * day).sin().max(0.0)
-                } else {
-                    0.0
+                let sun = match self.mode {
+                    "sunny" | "cloudy" => 1.0,
+                    "night" => 0.0,
+                    _ if (0.0..=1.0).contains(&day) => (std::f64::consts::PI * day).sin().max(0.0),
+                    _ => 0.0,
                 };
-                let cloud = if *clouds {
+                let cloud = if self.mode == "cloudy" {
+                    0.3 + 0.05 * (t / 7.0).sin()
+                } else if self.mode == "sunny" {
+                    1.0
+                } else if *clouds {
                     let wave = 0.5 * (t / 173.0).sin() + 0.3 * (t / 41.0).sin() + 0.2 * (t / 11.0).sin();
                     (0.75 + 0.25 * wave).clamp(0.35, 1.0)
                 } else {
@@ -257,7 +294,12 @@ impl Behaviour {
             } => {
                 let cycle = (*plugged_s + *away_s).max(1) as f64;
                 let per_amp = VOLTS * *phases as f64;
-                if t % cycle >= *plugged_s as f64 {
+                let plugged = match self.mode {
+                    "plugged" => true,
+                    "away" => false,
+                    _ => t % cycle < *plugged_s as f64,
+                };
+                if !plugged {
                     Reading { watts: 0.0, phases: *phases, status: "car away" }
                 } else {
                     let amps = match limit {

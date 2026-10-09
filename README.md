@@ -10,11 +10,22 @@ No hardware, no installer, no waiting for the sun.
 
 ## Quick start
 
+Download the binary for your system from the [latest release](https://github.com/frane/hemslab/releases/latest) and run:
+
 ```bash
-docker run --rm --network host -v ./data:/data fbandov/hemslab run heat-pump pv-inverter wallbox elli-charger-2
+./hemslab run heat-pump pv-inverter wallbox elli-charger-2
 ```
 
+Then open **http://localhost:8080**.
+
 Each device gets its own SKI and port (4712, 4713, …) and announces itself via mDNS. Your energy manager finds them like real devices. By default they pair with anyone who asks.
+
+![hemslab web UI](docs/ui.png)
+
+The web UI shows each device's power, the limit in force (the red dashed line), its LPC/LPP state and every write it received. From the UI you can:
+
+- set and release limits through a built-in test energy manager, so you can try everything without a HEMS
+- switch the device's situation: plug the car in or out, sun, clouds or night, heat pump on or off
 
 ```
 heat-pump-1                      port 4712   SKI 64a3179da57d49f3d8ff7512b6244e7add6e190c
@@ -90,14 +101,17 @@ Serial numbers are replaced with `X` (`--no-redact` keeps them). Single datagram
 | `--announce-ip` | `HEMSLAB_ANNOUNCE_IP` | detected | Address to announce on hosts with several networks |
 | profiles | `HEMSLAB_DEVICES` | – | Comma-separated list, for Docker Compose |
 
-A [`docker-compose.yml`](docker-compose.yml) is included. Docker needs host networking for mDNS.
+| `--ui` | `HEMSLAB_UI` | `0.0.0.0:8080` | Address of the web UI |
+| `--no-ui` | `HEMSLAB_NO_UI` | off | No web UI and no test energy manager |
 
-Without Docker: `cargo install --git https://github.com/frane/hemslab`.
+From source: `cargo install --git https://github.com/frane/hemslab`. For a NAS there is a Docker image (`docker-compose.yml`; host networking for mDNS).
 
 ## Tested against
 
-- The `eebus` crate's Energy Guard and Monitoring Appliance: LPC limit, release and MPC readings, for generic and replayed devices (`cargo test`)
-- eebus-go (the stack behind evcc) as an Energy Guard: limits 3000 W, 7000 W and release reach the wallbox, which pauses at 3 kW and charges at 10 A at 7 kW. MPC power arrives every second.
+- **The `eebus` crate's Energy Guard and Monitoring Appliance:** LPC limit, release and MPC readings, for generic and replayed devices, plus the web UI (`cargo test`).
+- **eebus-go, the stack behind evcc, as an Energy Guard:** 3000 W, 7000 W and release reach the wallbox. It pauses at 3 kW and charges at 10 A at 7 kW. MPC power arrives every second.
+- **[elli-eebus](https://github.com/frane/elli-eebus), the library behind the Home Assistant integration [ha-elli](https://github.com/frane/ha-elli):** it reads the replayed `elli-charger-2` exactly like the real wallbox (brand, 6–16 A, failsafe) and sets limits and failsafe on it.
+- **The full chain without hardware:** eebus-go as energy manager → [elli-eebus-proxy](https://github.com/frane/elli-eebus-proxy) → replayed Elli. Limits 3000 W, 0 W and release come through.
 
 ## Roadmap
 
@@ -105,7 +119,6 @@ Without Docker: `cargo install --git https://github.com/frane/hemslab`.
 - Quirks per profile, e.g. the Elli Charger 2 ignoring `timePeriod` or rejecting pause without OSCEV
 - E-mobility use cases (EVSECC, EVCC, OPEV, OSCEV) for the wallbox, and batteries
 - Modbus/SunSpec, then OCPP
-- A web page to watch and control devices (plug a car in, pass a cloud)
 
 ## License
 

@@ -156,3 +156,45 @@ async fn every_built_in_profile_starts() {
         task.await.unwrap();
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ui_sets_a_limit_through_the_test_energy_manager() {
+    use std::sync::Arc;
+    let dir = tempfile::tempdir().unwrap();
+    let (_stop_tx, stop_rx) = watch::channel(false);
+    let registry = Arc::new(hemslab::view::Registry::default());
+    let cem = hemslab::cem::start(registry.clone(), stop_rx).unwrap();
+    let (started, stop) = start("wallbox", 47_813, dir.path()).await;
+    registry.add(started.handle.clone());
+    let ui = hemslab::ui::serve(([127, 0, 0, 1], 0).into(), registry, cem).await.unwrap();
+
+    // Plain HTTP, as the page does it.
+    async fn http(ui: std::net::SocketAddr, request: String) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut socket = tokio::net::TcpStream::connect(ui).await.unwrap();
+        socket.write_all(request.as_bytes()).await.unwrap();
+        let mut out = String::new();
+        socket.read_to_string(&mut out).await.unwrap();
+        out
+    }
+    let body = r#"{"watts":3000}"#;
+    let response = http(ui, format!(
+        "POST /api/devices/wallbox-test/limit HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )).await;
+    assert!(response.starts_with("HTTP/1.1 204"), "{response}");
+
+    for _ in 0..100 {
+        let state = http(ui, "GET /api/state HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n".into()).await;
+        // 3 kW is below 6 A on three phases: the wallbox pauses.
+        if state.contains(r#""limit_watts":3000.0"#)
+            && state.contains(r#""state":"limited""#)
+            && state.contains(r#""status":"paused by limit""#)
+        {
+            let _ = stop.send(true);
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("the limit never reached the wallbox");
+}

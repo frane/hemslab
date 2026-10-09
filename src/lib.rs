@@ -6,3 +6,6 @@ pub mod generic;
 pub mod profile;
 pub mod replay;
 pub mod wire;
+pub mod view;
+pub mod cem;
+pub mod ui;

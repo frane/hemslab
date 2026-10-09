@@ -11,12 +11,15 @@ use eebus::ship::{ShipId, ShipTxtRecord, Ski};
 use eebus::spine::SpineEvent;
 use eebus::tls::ShipTls;
 use eebus::usecases::limitation::{ControllableSystemActor, LimitationState};
-use tokio::sync::watch;
-use tracing::{info, warn};
+use std::sync::{Arc, Mutex};
+
+use tokio::sync::{mpsc, watch};
+use tracing::warn;
 
 use crate::generic::{self, Behaviour, Meter};
 use crate::profile::Profile;
 use crate::replay::{self, Timeline};
+use crate::view::{Control, Handle, View};
 use crate::wire;
 
 /// Everything a device needs to start.
@@ -78,6 +81,7 @@ pub struct Started {
     pub ski: Ski,
     pub port: u16,
     pub ship_id: String,
+    pub handle: Arc<Handle>,
 }
 
 #[allow(clippy::large_enum_variant)] // one per device, never moved in a hot path
@@ -104,14 +108,16 @@ pub async fn run(
 ) {
     let name = spec.instance.clone();
     let result = prepare(spec).await;
-    let (mut hub, mut sim, trust, store, info, _mdns, dial) = match result {
+    let (mut hub, mut sim, trust, store, info, _mdns, dial, mut controls) = match result {
         Ok(parts) => parts,
         Err(error) => {
             let _ = started.send(Err(format!("{name}: {error}")));
             return;
         }
     };
-    let _ = started.send(Ok(info.clone()));
+    let handle = info.handle.clone();
+    let _ = started.send(Ok(info));
+    let log = |text: String| handle.log(text);
     let accept_all = store.accept_all;
 
     let redial: Vec<_> = dial
@@ -128,11 +134,23 @@ pub async fn run(
         if *shutdown.borrow_and_update() {
             break;
         }
+        while let Ok(control) = controls.try_recv() {
+            match control {
+                Control::Mode(mode) => {
+                    if let Sim::Generic { behaviour, .. } = &mut sim
+                        && behaviour.set_mode(&mode)
+                    {
+                        log(format!("mode set to {mode}"));
+                        handle.update(|v| v.mode = mode.clone());
+                    }
+                }
+            }
+        }
         let now = hub.now();
         // The physics and the replay run on a one-second tick.
         if now >= next_tick {
             next_tick = now + TICK;
-            step(&name, &mut hub, &mut sim, now);
+            step(&handle, &mut hub, &mut sim, now);
         }
         if connected == 0 && !redial.is_empty() && now >= next_redial {
             next_redial = now + REDIAL;
@@ -163,33 +181,40 @@ pub async fn run(
             HubEvent::TrustRequested { peer, origin } => {
                 let ski = peer.ski;
                 if accept_all {
-                    info!("{name}: pairing with {ski} ({origin})");
+                    log(format!("paired with {ski} ({origin})"));
                     hub.approve(ski);
                     trust.remember(TrustedPeer::new(ski));
                     store.save_trust(&trust);
                 } else {
-                    warn!("{name}: refused {ski} ({origin}); start with --trust {ski} to admit it");
+                    log(format!("refused {ski} ({origin}); start with --trust {ski} to admit it"));
                     hub.refuse(ski);
                 }
             }
             HubEvent::Connected { ski, .. } => {
                 connected += 1;
-                info!("{name}: {ski} connected");
+                log(format!("{ski} connected"));
+                handle.update(|v| v.peers.push(ski.to_string()));
                 store.save_trust(&trust);
             }
             HubEvent::Disconnected { ski, reason } => {
                 connected = connected.saturating_sub(1);
-                info!("{name}: {ski} disconnected ({reason})");
+                log(format!("{ski} disconnected ({reason})"));
+                let gone = ski.to_string();
+                handle.update(|v| {
+                    if let Some(i) = v.peers.iter().position(|p| *p == gone) {
+                        v.peers.remove(i);
+                    }
+                });
             }
             HubEvent::HandshakeFailed { origin, error, .. } => {
                 tracing::debug!("{name}: connection {origin} failed: {error}");
             }
             HubEvent::PeerDiscovered { device, ski } => {
-                info!("{name}: {ski} is {}", device.as_str());
+                log(format!("{ski} is {}", device.as_str()));
             }
             HubEvent::PeerKeysUpdated { .. } => store.save_trust(&trust),
             HubEvent::Spine(event) => {
-                log_write(&name, &event, hub.engine(), matches!(sim, Sim::Replay { .. }));
+                log_write(&handle, &event, hub.engine(), matches!(sim, Sim::Replay { .. }));
                 if let Sim::Generic { actor, .. } = &mut sim {
                     actor.handle_event(hub.engine_mut(), &event, now);
                 }
@@ -202,14 +227,23 @@ pub async fn run(
             _ => {}
         }
         if let Sim::Generic { actor, last_limit, .. } = &mut sim {
-            report_limit(&name, actor, last_limit);
+            report_limit(&handle, actor, last_limit);
         }
     }
     hub.shutdown(eebus::ship::ConnectionCloseReason::Unspecific).await;
-    info!("{name}: stopped");
+    tracing::info!("{name}: stopped");
 }
 
-type Prepared = (Hub, Sim, TrustStore, Store, Started, Option<eebus::mdns::Mdns>, Vec<Dial>);
+type Prepared = (
+    Hub,
+    Sim,
+    TrustStore,
+    Store,
+    Started,
+    Option<eebus::mdns::Mdns>,
+    Vec<Dial>,
+    mpsc::UnboundedReceiver<Control>,
+);
 
 async fn prepare(spec: Spec) -> Result<Prepared, String> {
     let store = Store::open(&spec.state_dir.join(&spec.instance), spec.accept_all)?;
@@ -296,13 +330,46 @@ async fn prepare(spec: Spec) -> Result<Prepared, String> {
         },
         Pending::Replay(timeline) => Sim::Replay { timeline },
     };
+    let (control, controls) = mpsc::unbounded_channel();
+    let mut initial = View {
+        status: "starting".into(),
+        mode: "auto".into(),
+        ..View::default()
+    };
+    if let Sim::Generic { behaviour, .. } = &sim
+        && let Profile::Generic(p) = &spec.profile
+    {
+        initial.modes = behaviour.modes().to_vec();
+        initial.direction = Some(match p.limit.use_case {
+            crate::profile::LimitUseCase::Lpc => "consumption",
+            crate::profile::LimitUseCase::Lpp => "production",
+        });
+        initial.failsafe_watts = Some(p.limit.failsafe_watts);
+        initial.nominal_max_watts = Some(p.limit.nominal_max_watts);
+    } else {
+        initial.status = "replaying".into();
+    }
+    let handle = Arc::new(Handle {
+        instance: spec.instance.clone(),
+        profile: spec.profile.name().to_string(),
+        description: spec.profile.description().to_string(),
+        kind: match spec.profile {
+            Profile::Generic(_) => "generic",
+            Profile::Replay(_) => "replay",
+        },
+        ski: ski.to_string(),
+        port: bound.port(),
+        view: Mutex::new(initial),
+        control,
+    });
     let started = Started {
         instance: spec.instance.clone(),
         ski,
         port: bound.port(),
         ship_id: ship_id.as_str().to_string(),
+        handle,
     };
-    Ok((hub, sim, trust, store, started, mdns, spec.dial))
+    Ok((hub, sim, trust, store, started, mdns, spec.dial, controls))
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -380,7 +447,7 @@ impl Store {
     }
 }
 
-fn step(name: &str, hub: &mut Hub, sim: &mut Sim, now: Duration) {
+fn step(handle: &Handle, hub: &mut Hub, sim: &mut Sim, now: Duration) {
     match sim {
         Sim::Generic {
             actor,
@@ -395,18 +462,23 @@ fn step(name: &str, hub: &mut Hub, sim: &mut Sim, now: Duration) {
                 generic::publish(meter, behaviour, reading, hub.engine_mut(), now);
             }
             if *last_status != reading.status {
-                info!("{name}: {} ({:.0} W)", reading.status, reading.watts);
+                handle.log(format!("{} ({:.0} W)", reading.status, reading.watts));
                 *last_status = reading.status;
+                handle.update(|v| v.status = reading.status.to_string());
             }
+            handle.sample(reading.watts, limit);
         }
         Sim::Replay { timeline } => {
             timeline.advance(hub.engine_mut(), now);
+            if let Some(watts) = replay::total_power(hub.engine()) {
+                handle.sample(watts, None);
+            }
         }
     }
 }
 
 fn report_limit(
-    name: &str,
+    handle: &Handle,
     actor: &ControllableSystemActor,
     last: &mut Option<(LimitationState, Option<f64>)>,
 ) {
@@ -414,9 +486,14 @@ fn report_limit(
     let limit = generic::limit_of(actor);
     if *last != Some((state, limit)) {
         match limit {
-            Some(w) => info!("{name}: {} — limit {w:.0} W", state.as_str()),
-            None => info!("{name}: {} — no limit", state.as_str()),
+            Some(w) => handle.log(format!("{} — limit {w:.0} W", state.as_str())),
+            None => handle.log(format!("{} — no limit", state.as_str())),
         }
+        handle.update(|v| {
+            v.state = Some(state.as_str().to_string());
+            v.limit_watts = limit;
+            v.failsafe_watts = Some(actor.system().config().failsafe_watts);
+        });
         *last = Some((state, limit));
     }
 }
@@ -425,10 +502,10 @@ fn report_limit(
 ///
 /// Generic devices decide on their writes (`WriteRequested`, which carries the data);
 /// replayed devices store them directly (`DataWritten`), so the data is read back.
-fn log_write(name: &str, event: &SpineEvent, engine: &eebus::spine::Engine, replay: bool) {
+fn log_write(handle: &Handle, event: &SpineEvent, engine: &eebus::spine::Engine, replay: bool) {
     match event {
         SpineEvent::WriteRequested(request) => {
-            info!("{name}: write to {}: {}", describe(&request.feature), plain(&request.data));
+            handle.log(format!("write to {}: {}", describe(&request.feature), plain(&request.data)));
         }
         SpineEvent::DataWritten { feature, function, .. } if replay => {
             let data = engine
@@ -437,7 +514,7 @@ fn log_write(name: &str, event: &SpineEvent, engine: &eebus::spine::Engine, repl
                 .and_then(|f| f.data(function))
                 .map(plain)
                 .unwrap_or_default();
-            info!("{name}: write to {}: {data}", describe(feature));
+            handle.log(format!("write to {}: {data}", describe(feature)));
         }
         _ => {}
     }
