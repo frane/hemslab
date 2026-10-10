@@ -6,6 +6,10 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Build binaries for this existing release (e.g. v0.1.0)"
+        required: false
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -18,8 +22,9 @@ jobs:
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
   binaries:
-    # Releases: a ready-to-run binary per platform, attached to the release.
-    if: github.event_name == 'release'
+    # Releases: a ready-to-run binary per platform, attached to the release. Run the
+    # workflow by hand with a tag to (re)build them for an existing release.
+    if: github.event_name == 'release' || inputs.tag != ''
     needs: test
     strategy:
       matrix:
@@ -27,28 +32,35 @@ jobs:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, name: hemslab-linux-x86_64 }
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, name: hemslab-linux-arm64 }
           - { os: macos-14, target: aarch64-apple-darwin, name: hemslab-macos-arm64 }
-          - { os: macos-13, target: x86_64-apple-darwin, name: hemslab-macos-x86_64 }
+          # Intel Macs: cross-built on Apple silicon, as GitHub retired the Intel runners.
+          - { os: macos-14, target: x86_64-apple-darwin, name: hemslab-macos-x86_64 }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, name: hemslab-windows-x86_64.exe }
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release --locked
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Upload
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          src=target/release/hemslab
+          src=target/${{ matrix.target }}/release/hemslab
           [ -f "$src.exe" ] && src="$src.exe"
           cp "$src" "${{ matrix.name }}"
-          gh release upload "${{ github.event.release.tag_name }}" "${{ matrix.name }}" --clobber
+          gh release upload "$TAG" "${{ matrix.name }}" --clobber
   docker:
     # Releases only (tags latest, 0.1.0, 0.1): ghcr.io/frane/hemslab and, with the secrets
     # DOCKERHUB_USERNAME and DOCKERHUB_TOKEN, <user>/hemslab on Docker Hub (amd64, arm64).
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.tag == '')
     needs: test
     runs-on: ubuntu-latest
     env:
