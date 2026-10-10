@@ -10,3 +10,4 @@ pub mod view;
 pub mod cem;
 pub mod ui;
 pub mod record;
+pub mod modbus;

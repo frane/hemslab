@@ -6,7 +6,7 @@ Keine Hardware, kein Installateur, kein Warten auf Sonne.
 
 [English](README.md) · Basiert auf [hupe1980/eebus](https://github.com/hupe1980/eebus)
 
-> **Status: 0.1.0, früh.** Nur EEBUS. Modbus/SunSpec und OCPP folgen.
+> **Status: früh.** EEBUS und Modbus TCP. SunSpec und OCPP folgen.
 
 ## Schnellstart
 
@@ -46,6 +46,8 @@ In der Oberfläche kannst du:
 
 Alle drei starten im LPC/LPP-Zustand `init` mit ihrem Failsafe-Limit. Schweigt der Energiemanager, fallen sie auf Failsafe zurück. Sie melden Leistung gesamt und je Phase, Strom je Phase und Energie.
 
+**Modbus-Geräte** sprechen Modbus TCP auf eigenem Port (1502, 1503, …). `sigenergy` ist ein Sigenergy-Hybridsystem hinter der echten Registerkarte (355 Register, Unit 247 für die Anlage, 1 für den Wechselrichter): 10 kWp PV, 10-kWh-Speicher, ein Haushalt. Remote EMS (40029/40031) mit allen Modi, Lade-/Entladegrenzen, PV- und Einspeisegrenze funktionieren wie dokumentiert; jeder Schreibzugriff steht im Log.
+
 **Nachgespielte Geräte** sind echte Geräte, wie sie aufgezeichnet wurden: gleiche SPINE-Struktur, gleiche Use Cases, gleiche Antworten. Aufgezeichnete Messwerte laufen in einer Schleife.
 
 | Profil | Quelle |
@@ -61,6 +63,7 @@ Die Strukturen stammen aus [enbility/devices](https://github.com/enbility/device
 
 1. **Finden:** `hemslab discover` listet die EEBUS-Geräte im Netz mit ihrer SKI.
 2. **Mitschneiden:** `hemslab record <SKI> --name lg-therma-v --minutes 15`. hemslab verbindet sich als Energiemanager, liest alles und abonniert jedes Feature. **hemslab-recorder** in den EEBUS-Einstellungen des Geräts koppeln. Akzeptiert das Gerät nur einen Energiemanager, den eigenen dafür kurz entfernen. Am Ende entstehen `lg-therma-v.jsonl` (Rohdaten) und `lg-therma-v.json` (Profil), Seriennummern sind geschwärzt. Mitschnitte von elli-eebus-proxy lassen sich mit `hemslab import` einlesen.
+   Modbus-Geräte zeichnest du über ihre Registerkarte auf: `hemslab record-modbus 192.168.1.30 --map sigenergy --name mein-sigenergy --minutes 15`. Bei Sigenergy muss „Modbus TCP Server“ aktiv sein, oft schaltet das der Installateur frei.
 3. **Starten:** `hemslab run lg-therma-v.json`. Pull Requests mit neuen Profilen sind willkommen.
 
 Generische Profile sind TOML-Dateien. Am einfachsten eine aus [`profiles/`](profiles/) kopieren und anpassen.

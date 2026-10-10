@@ -19,6 +19,10 @@ use serde_json::Value;
 pub enum Profile {
     Generic(GenericProfile),
     Replay(ReplayProfile),
+    /// A simulated Modbus device with behaviour.
+    Modbus(ModbusProfile),
+    /// A recorded Modbus device.
+    ModbusReplay(ModbusReplayProfile),
 }
 
 impl Profile {
@@ -26,6 +30,8 @@ impl Profile {
         match self {
             Profile::Generic(p) => &p.name,
             Profile::Replay(p) => &p.name,
+            Profile::Modbus(p) => &p.name,
+            Profile::ModbusReplay(p) => &p.name,
         }
     }
 
@@ -33,6 +39,8 @@ impl Profile {
         match self {
             Profile::Generic(p) => &p.description,
             Profile::Replay(p) => &p.description,
+            Profile::Modbus(p) => &p.description,
+            Profile::ModbusReplay(p) => &p.description,
         }
     }
 
@@ -54,12 +62,22 @@ impl Profile {
 
     pub fn parse(text: &str, extension: &str) -> Result<Self, String> {
         match extension {
-            "toml" => toml::from_str(text)
-                .map(Profile::Generic)
-                .map_err(|e| e.to_string()),
-            _ => serde_json::from_str(text)
-                .map(Profile::Replay)
-                .map_err(|e| e.to_string()),
+            "toml" => {
+                let value: toml::Value = toml::from_str(text).map_err(|e| e.to_string())?;
+                if value.get("protocol").and_then(|p| p.as_str()) == Some("modbus") {
+                    toml::from_str(text).map(Profile::Modbus).map_err(|e| e.to_string())
+                } else {
+                    toml::from_str(text).map(Profile::Generic).map_err(|e| e.to_string())
+                }
+            }
+            _ => {
+                let value: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+                if value.get("protocol").and_then(|p| p.as_str()) == Some("modbus") {
+                    serde_json::from_value(value).map(Profile::ModbusReplay).map_err(|e| e.to_string())
+                } else {
+                    serde_json::from_value(value).map(Profile::Replay).map_err(|e| e.to_string())
+                }
+            }
         }
     }
 }
@@ -203,12 +221,59 @@ pub struct TimedData {
     pub cmd: Value,
 }
 
+// ---- modbus ---------------------------------------------------------------------------
+
+/// A simulated Modbus device: a register map and a behaviour model behind it.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ModbusProfile {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// Always `modbus`.
+    pub protocol: String,
+    /// A built-in register map name or a map file.
+    pub map: String,
+    /// The Sigenergy hybrid plant; further models will sit beside it.
+    pub sigenergy: crate::modbus::sigenergy::Params,
+}
+
+/// A recorded Modbus device: register contents over time.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ModbusReplayProfile {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub source: String,
+    /// Always `modbus`.
+    pub protocol: String,
+    /// The register map it was recorded with, which names what the numbers mean.
+    pub map: String,
+    #[serde(default)]
+    pub brand: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Register blocks as they were read; replayed in a loop.
+    pub snapshots: Vec<Snapshot>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Snapshot {
+    /// Seconds since the start of the recording.
+    pub at: f64,
+    pub unit: u8,
+    pub table: crate::modbus::map::Table,
+    pub address: u16,
+    pub words: Vec<u16>,
+}
+
 // ---- built-ins ------------------------------------------------------------------------
 
 pub const BUILTIN: &[(&str, &str)] = &[
     ("heat-pump", include_str!("../profiles/heat-pump.toml")),
     ("pv-inverter", include_str!("../profiles/pv-inverter.toml")),
     ("wallbox", include_str!("../profiles/wallbox.toml")),
+    ("sigenergy", include_str!("../profiles/sigenergy.toml")),
     ("elli-charger-2", include_str!("../profiles/elli-charger-2.json")),
     ("elli-charger-connect-pro", include_str!("../profiles/real/elli-charger-connect-pro.json")),
     ("kostal-smart-energy-meter", include_str!("../profiles/real/kostal-smart-energy-meter.json")),

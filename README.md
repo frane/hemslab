@@ -6,7 +6,7 @@ No hardware, no installer, no waiting for the sun.
 
 [Deutsch](README.de.md) · Built on [hupe1980/eebus](https://github.com/hupe1980/eebus)
 
-> **Status: 0.1.0, early.** EEBUS only. Modbus/SunSpec and OCPP come next.
+> **Status: early.** EEBUS and Modbus TCP. SunSpec and OCPP come next.
 
 ## Quick start
 
@@ -57,6 +57,12 @@ The log shows every write your energy manager sends, in plain JSON, and what the
 
 All three start in the LPC/LPP `init` state with their failsafe limit, fall back to failsafe when the energy manager goes silent, and report power, per-phase power and current, and energy.
 
+**Modbus devices** speak Modbus TCP on their own port (1502, 1503, …):
+
+| Profile | Behaviour |
+|---|---|
+| `sigenergy` | A Sigenergy hybrid system behind the real register map (355 registers, unit 247 for the plant, 1 for the inverter): 10 kWp PV, a 10 kWh battery, a house with a kettle. Remote EMS (40029/40031) with all control modes, charge/discharge limits, PV limit and export limit work as documented, and every write shows up in the log. |
+
 **Replayed devices** are real devices as recorded: the same SPINE structure, use cases and answers. Recorded measurements play back in a loop.
 
 | Profile | Source |
@@ -66,7 +72,7 @@ All three start in the LPC/LPP `init` state with their failsafe limit, fall back
 | `kostal-smart-energy-meter`, `sma-home-manager-2` | Energy meters and managers |
 | `vaillant-arotherm`, `viessmann-vitoconnect` | Heat pumps |
 
-The structural captures come from [enbility/devices](https://github.com/enbility/devices) (MIT). See [`profiles/real/README.md`](profiles/real/README.md).
+The Sigenergy register map comes from [Sigenergy-Local-Modbus](https://github.com/TypQxQ/Sigenergy-Local-Modbus) (MIT), which follows Sigenergy's Modbus protocol V2.9. The structural captures come from [enbility/devices](https://github.com/enbility/devices) (MIT). See [`profiles/real/README.md`](profiles/real/README.md).
 
 Use `hemslab show <profile>` to see entities, features, functions and use cases.
 
@@ -87,6 +93,14 @@ hemslab record 3d9f…a0c1 --name lg-therma-v --minutes 15
 
 Pair **hemslab-recorder** in the device's EEBUS settings when it shows up. Some devices accept only one energy manager; remove yours there for the recording. When the time is up, or on Ctrl-C, you get `lg-therma-v.jsonl`, the raw capture, and `lg-therma-v.json`, the profile. Serial numbers are replaced with `X`.
 
+**Modbus devices** are recorded through their register map: every register is read at an interval and the profile replays the values as they moved. Serial numbers are replaced with `X`.
+
+```bash
+hemslab record-modbus 192.168.1.30 --map sigenergy --name my-sigenergy --minutes 15
+```
+
+Sigenergy needs "Modbus TCP Server" enabled (often by the installer). Maps for other devices are JSON files of the same shape as [`profiles/maps/sigenergy.json`](profiles/maps/sigenergy.json); pass the file to `--map`.
+
 Captures from [elli-eebus-proxy](https://github.com/frane/elli-eebus-proxy), whose `traffic.jsonl` includes what an energy manager wrote, and single discovery or use-case datagrams import too: `hemslab import traffic.jsonl --name …` (`--no-redact` keeps serial numbers).
 
 **Run** it with `hemslab run lg-therma-v.json`. Pull requests with new profiles are welcome.
@@ -106,6 +120,7 @@ Captures from [elli-eebus-proxy](https://github.com/frane/elli-eebus-proxy), who
 | `--announce-ip` | `HEMSLAB_ANNOUNCE_IP` | detected | Address to announce on hosts with several networks |
 | profiles | `HEMSLAB_DEVICES` | – | Comma-separated list, for Docker Compose |
 
+| `--modbus-port` | `HEMSLAB_MODBUS_PORT` | 1502 | Port of the first Modbus TCP device; the others count up |
 | `--ui` | `HEMSLAB_UI` | `0.0.0.0:8080` | Address of the web UI |
 | `--no-ui` | `HEMSLAB_NO_UI` | off | No web UI and no test energy manager |
 
@@ -123,7 +138,7 @@ From source: `cargo install --git https://github.com/frane/hemslab`. For a NAS t
 - Recording between a device and its energy manager (MITM), to capture what the energy manager writes
 - Quirks per profile, e.g. the Elli Charger 2 ignoring `timePeriod` or rejecting pause without OSCEV
 - E-mobility use cases (EVSECC, EVCC, OPEV, OSCEV) for the wallbox, and batteries
-- Modbus/SunSpec, then OCPP
+- More Modbus devices and maps (SunSpec inverters, heat pumps such as the LG Therma V), then OCPP
 
 ## License
 

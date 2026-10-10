@@ -246,6 +246,9 @@ type Prepared = (
 );
 
 async fn prepare(spec: Spec) -> Result<Prepared, String> {
+    if matches!(spec.profile, Profile::Modbus(_) | Profile::ModbusReplay(_)) {
+        return Err("a Modbus profile runs through hemslab::modbus::device".into());
+    }
     let store = Store::open(&spec.state_dir.join(&spec.instance), spec.accept_all)?;
     let ship_id: ShipId = format!("hemslab-{}", spec.instance)
         .parse()
@@ -269,6 +272,7 @@ async fn prepare(spec: Spec) -> Result<Prepared, String> {
                 profile.device.device_type.clone(),
             )
         }
+        Profile::Modbus(_) | Profile::ModbusReplay(_) => unreachable!("checked above"),
         Profile::Replay(profile) => {
             let built = replay::build(profile)?;
             let device_type = built.engine.device().device_type().as_str().to_string();
@@ -355,7 +359,7 @@ async fn prepare(spec: Spec) -> Result<Prepared, String> {
         description: spec.profile.description().to_string(),
         kind: match spec.profile {
             Profile::Generic(_) => "generic",
-            Profile::Replay(_) => "replay",
+            _ => "replay",
         },
         ski: ski.to_string(),
         port: bound.port(),

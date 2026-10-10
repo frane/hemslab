@@ -41,6 +41,9 @@ enum Command {
         /// SKI of an energy manager to trust in advance.
         #[arg(long, env = "HEMSLAB_TRUST", value_delimiter = ',')]
         trust: Vec<String>,
+        /// Port of the first Modbus TCP device; the others count up.
+        #[arg(long, env = "HEMSLAB_MODBUS_PORT", default_value_t = 1502)]
+        modbus_port: u16,
         /// Address of the web UI.
         #[arg(long, env = "HEMSLAB_UI", default_value = "0.0.0.0:8080")]
         ui: std::net::SocketAddr,
@@ -78,6 +81,23 @@ enum Command {
     },
     /// Show what a profile contains.
     Show { profile: String },
+    /// Record a real Modbus device: read every register of its map at an interval.
+    /// Ctrl-C stops and turns it into a profile.
+    RecordModbus {
+        /// `host` or `host:port` (default port 502).
+        address: String,
+        /// Register map: a built-in name (`sigenergy`) or a map file.
+        #[arg(long, default_value = "sigenergy")]
+        map: String,
+        /// Profile name. Writes `<name>.jsonl` and `<name>.json`.
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        minutes: Option<u64>,
+        /// Seconds between reads.
+        #[arg(long, default_value_t = 5)]
+        interval: u64,
+    },
     /// Turn a capture into a replay profile.
     Import {
         /// `traffic.jsonl` from elli-eebus-proxy, or discovery/use-case datagrams.
@@ -126,15 +146,34 @@ async fn main() {
             dial,
             ui,
             no_ui,
+            modbus_port,
         } => {
-            run(profiles, state_dir, port, !no_mdns, announce_ip, strict, trust, dial, (!no_ui).then_some(ui))
-                .await
+            run(
+                profiles,
+                state_dir,
+                port,
+                !no_mdns,
+                announce_ip,
+                strict,
+                trust,
+                dial,
+                (!no_ui).then_some(ui),
+                modbus_port,
+            )
+            .await
         }
         Command::Profiles => {
             list();
             Ok(())
         }
         Command::Discover { seconds } => discover(seconds),
+        Command::RecordModbus {
+            address,
+            map,
+            name,
+            minutes,
+            interval,
+        } => record_modbus(address, map, name, minutes, interval).await,
         Command::Record {
             device,
             name,
@@ -170,6 +209,7 @@ async fn run(
     trust: Vec<String>,
     dial: Vec<String>,
     ui: Option<std::net::SocketAddr>,
+    modbus_port: u16,
 ) -> Result<(), String> {
     let dial: Vec<device::Dial> = dial
         .iter()
@@ -196,16 +236,33 @@ async fn run(
     };
     let mut tasks = Vec::new();
     let mut counts = std::collections::HashMap::<String, usize>::new();
-    for (index, spec) in names.iter().enumerate() {
+    let (mut eebus_index, mut modbus_index) = (0u16, 0u16);
+    for spec in &names {
         let profile = Profile::load(spec)?;
         let count = counts.entry(profile.name().to_string()).or_default();
         *count += 1;
         let instance = format!("{}-{}", profile.name(), count);
+        if matches!(profile, Profile::Modbus(_) | Profile::ModbusReplay(_)) {
+            let (tx, rx) = oneshot::channel();
+            let spec = hemslab::modbus::device::Spec {
+                profile,
+                instance,
+                port: modbus_port + modbus_index,
+            };
+            modbus_index += 1;
+            tasks.push(tokio::spawn(hemslab::modbus::device::run(spec, tx, stop_rx.clone())));
+            let started = rx.await.map_err(|_| "a device failed to start")??;
+            registry.add(started.handle.clone());
+            println!("{:<32} port {:<5}  Modbus TCP", started.instance, started.port);
+            continue;
+        }
         let (tx, rx) = oneshot::channel();
+        let index = eebus_index;
+        eebus_index += 1;
         let spec = Spec {
             profile,
             instance,
-            port: port + index as u16,
+            port: port + index,
             state_dir: state_dir.clone(),
             mdns,
             announce_ip,
@@ -247,10 +304,12 @@ fn list() {
     for (name, _) in BUILTIN {
         let profile = hemslab::profile::builtin(name).expect("built-in");
         let kind = match profile {
-            Profile::Generic(_) => "generic",
-            Profile::Replay(_) => "replay ",
+            Profile::Generic(_) => "eebus  ",
+            Profile::Replay(_) => "eebus  replay",
+            Profile::Modbus(_) => "modbus ",
+            Profile::ModbusReplay(_) => "modbus replay",
         };
-        println!("{name:<32} {kind}  {}", profile.description());
+        println!("{name:<32} {kind:<14} {}", profile.description());
     }
 }
 
@@ -258,6 +317,19 @@ fn show(spec: &str) -> Result<(), String> {
     let profile = Profile::load(spec)?;
     println!("{}: {}", profile.name(), profile.description());
     match profile {
+        Profile::Modbus(p) => {
+            println!("  protocol Modbus TCP, register map {}", p.map);
+            println!("  model    {:?}", p.sigenergy);
+        }
+        Profile::ModbusReplay(p) => {
+            println!("  protocol Modbus TCP, register map {}", p.map);
+            println!("  source   {}", p.source);
+            println!(
+                "  data     {} register blocks over {:.0} s",
+                p.snapshots.len(),
+                p.snapshots.last().map(|s| s.at).unwrap_or(0.0)
+            );
+        }
         Profile::Generic(p) => {
             println!("  device   {} {} ({} / {})", p.device.brand, p.device.model, p.device.device_type, p.device.entity_type);
             println!("  limit    {:?}, failsafe {} W, nominal max {} W", p.limit.use_case, p.limit.failsafe_watts, p.limit.nominal_max_watts);
@@ -314,6 +386,26 @@ fn import(
     max_timeline: f64,
     output: Option<PathBuf>,
 ) -> Result<(), String> {
+    if let [single] = captures
+        && std::fs::read_to_string(single)
+            .ok()
+            .and_then(|t| t.lines().next().map(|l| l.contains("\"protocol\":\"modbus\"")))
+            .unwrap_or(false)
+    {
+        let (profile, count) = hemslab::modbus::record::import(single, &name, redact)?;
+        let output = output.unwrap_or_else(|| PathBuf::from(format!("{name}.json")));
+        let json = serde_json::to_string(&profile).map_err(|e| e.to_string())?;
+        std::fs::write(&output, json + "\n").map_err(|e| format!("{}: {e}", output.display()))?;
+        println!(
+            "{}: {} register blocks over {:.0} s ({})",
+            output.display(),
+            count,
+            profile.snapshots.last().map(|s| s.at).unwrap_or(0.0),
+            profile.model.as_deref().unwrap_or("model unknown")
+        );
+        let _ = (description, side, max_timeline);
+        return Ok(());
+    }
     let paths: Vec<&Path> = captures.iter().map(PathBuf::as_path).collect();
     let options = ImportOptions {
         name: name.clone(),
@@ -402,6 +494,45 @@ async fn record(
     )
     .await?;
     println!("\n{written} messages recorded to {}", capture.display());
+    if written == 0 {
+        return Ok(());
+    }
+    import(&[capture], name, None, None, true, 3600.0, None)
+}
+
+async fn record_modbus(
+    address: String,
+    map: String,
+    name: String,
+    minutes: Option<u64>,
+    interval: u64,
+) -> Result<(), String> {
+    use std::net::ToSocketAddrs;
+    let with_port = if address.contains(':') { address.clone() } else { format!("{address}:502") };
+    let address = with_port
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut a| a.next())
+        .ok_or_else(|| format!("`{with_port}` is not host:port"))?;
+    let capture = PathBuf::from(format!("{name}.jsonl"));
+    let (stop_tx, stop_rx) = watch::channel(false);
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        let _ = stop_tx.send(true);
+    });
+    println!("Recording {address} with map {map} every {interval} s. Ctrl-C stops.");
+    let written = hemslab::modbus::record::record(
+        hemslab::modbus::record::Options {
+            address,
+            map,
+            output: capture.clone(),
+            interval: std::time::Duration::from_secs(interval.max(1)),
+            duration: minutes.map(|m| std::time::Duration::from_secs(m * 60)),
+        },
+        stop_rx,
+    )
+    .await?;
+    println!("\n{written} register blocks recorded to {}", capture.display());
     if written == 0 {
         return Ok(());
     }

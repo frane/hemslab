@@ -1,0 +1,11 @@
+name = "sigenergy"
+description = "Sigenergy hybrid system (Modbus TCP): 10 kWp PV, 10 kWh battery, a house. Remote EMS modes, charge/discharge, PV and export limits work as documented."
+protocol = "modbus"
+map = "sigenergy"
+
+[sigenergy]
+pv_peak_watts = 10000
+battery_kwh = 10
+battery_max_watts = 5000
+base_load_watts = 450
+initial_soc = 0.5

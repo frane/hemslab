@@ -137,10 +137,14 @@ async fn the_replayed_elli_looks_like_an_elli_and_takes_a_limit() {
 async fn every_built_in_profile_starts() {
     let dir = tempfile::tempdir().unwrap();
     for (index, (name, _)) in hemslab::profile::BUILTIN.iter().enumerate() {
+        let profile = Profile::load(name).unwrap();
+        if matches!(profile, Profile::Modbus(_) | Profile::ModbusReplay(_)) {
+            continue; // tests/modbus.rs
+        }
         let (tx, rx) = oneshot::channel();
         let (stop, stop_rx) = watch::channel(false);
         let spec = Spec {
-            profile: Profile::load(name).unwrap(),
+            profile,
             instance: format!("{name}-start"),
             port: 47_830 + index as u16,
             state_dir: dir.path().to_path_buf(),

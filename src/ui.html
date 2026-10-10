@@ -171,6 +171,8 @@ const STATES = {
   "unlimited/controlled": ["Not limited", "free"],
   "failsafe": ["Failsafe", "failsafe"],
   "unlimited/autonomous": ["On its own", "free"],
+  "remote EMS": ["Remote EMS", "limited"],
+  "local EMS": ["Local EMS", "free"],
 };
 
 function post(path, body) {
@@ -182,10 +184,11 @@ function card(d) {
   if (c) return c;
   const node = document.getElementById("device").content.firstElementChild.cloneNode(true);
   const v = d.view;
-  node.classList.add(d.kind === "replay" ? "replay" : (v.direction || "consumption"));
+  const modbus = d.kind.startsWith("modbus");
+  node.classList.add(d.kind.endsWith("replay") ? "replay" : (v.direction || "consumption"));
   node.querySelector("h2").textContent = d.instance;
-  node.querySelector(".where").textContent = `port ${d.port}`;
-  node.querySelector(".where").title = `SKI ${d.ski}`;
+  node.querySelector(".where").textContent = modbus ? `Modbus TCP ${d.port}` : `EEBUS ${d.port}`;
+  if (d.ski) node.querySelector(".where").title = `SKI ${d.ski}`;
   node.querySelector(".about").textContent = d.description;
   const seg = node.querySelector(".seg");
   seg.setAttribute("aria-label", "Mode");
@@ -201,6 +204,8 @@ function card(d) {
     seg.remove();
   }
   const form = node.querySelector(".limitform");
+  // Modbus devices are steered through their registers, not by the test energy manager.
+  if (modbus) form.remove();
   const input = form.querySelector("input");
   form.onsubmit = (e) => {
     e.preventDefault();
@@ -208,7 +213,7 @@ function card(d) {
     if (input.value !== "" && w >= 0) post(`/api/devices/${d.instance}/limit`, { watts: w });
   };
   form.querySelector(".release").onclick = () => post(`/api/devices/${d.instance}/limit`, { watts: null });
-  if (v.direction) input.value = v.direction === "production" ? 3000 : 4200;
+  if (!modbus && v.direction) input.value = v.direction === "production" ? 3000 : 4200;
   c = { node, seen: 0 };
   cards.set(d.instance, c);
   return c;
@@ -260,15 +265,15 @@ function render(state) {
       w.className = "watts";
       w.innerHTML = `${fmt.format(Math.abs(v.watts))}<span>W</span>`;
     }
-    const producing = v.watts != null && v.watts < 0;
+    const producing = v.watts != null && v.watts < 0 && !d.kind.startsWith("modbus");
     n.querySelector(".status").textContent = v.status + (producing ? ", feeding in" : "");
-    const st = STATES[v.state] || [d.kind === "replay" ? "Recorded device" : "", ""];
+    const st = STATES[v.state] || [d.kind.endsWith("replay") ? "Recorded device" : "", ""];
     const name = n.querySelector(".state .name");
     name.textContent = st[0];
     name.className = "name " + st[1];
     n.querySelector(".ceiling").textContent = v.limit_watts != null
       ? `at most ${fmt.format(v.limit_watts)} W`
-      : (v.state ? "" : `${v.peers.length} energy manager${v.peers.length === 1 ? "" : "s"} connected`);
+      : (v.state || d.kind.startsWith("modbus") ? "" : `${v.peers.length} energy manager${v.peers.length === 1 ? "" : "s"} connected`);
     for (const b of n.querySelectorAll(".seg button")) b.setAttribute("aria-pressed", String(b.textContent === v.mode));
     chart(n.querySelector("svg"), v);
     const log = n.querySelector(".log");
