@@ -72,17 +72,22 @@ Use `hemslab show <profile>` to see entities, features, functions and use cases.
 
 ## Your own devices
 
-**Record** the device with a proxy between it and an energy manager. For now that's [elli-eebus-proxy](https://github.com/frane/elli-eebus-proxy) in sniff mode, which writes `traffic.jsonl`. A built-in `hemslab record` for any EEBUS device comes next.
-
-**Import** the capture:
+**Find** the device and its SKI:
 
 ```bash
-hemslab import traffic.jsonl --name lg-therma-v
-# lg-therma-v.json: 2 entities, 12 features, 4 use cases, 18 answers, 600 notifications over 900 s
-# redacted: 00015087
+hemslab discover
+# 3d9f…a0c1  LG               THERMA V                192.168.1.42:4712
 ```
 
-Serial numbers are replaced with `X` (`--no-redact` keeps them). Single datagrams (discovery or use-case replies, plain or EEBUS JSON) work too.
+**Record** it. hemslab connects as an energy manager, reads everything the device serves and subscribes to every feature:
+
+```bash
+hemslab record 3d9f…a0c1 --name lg-therma-v --minutes 15
+```
+
+Pair **hemslab-recorder** in the device's EEBUS settings when it shows up. Some devices accept only one energy manager; remove yours there for the recording. When the time is up, or on Ctrl-C, you get `lg-therma-v.jsonl`, the raw capture, and `lg-therma-v.json`, the profile. Serial numbers are replaced with `X`.
+
+Captures from [elli-eebus-proxy](https://github.com/frane/elli-eebus-proxy), whose `traffic.jsonl` includes what an energy manager wrote, and single discovery or use-case datagrams import too: `hemslab import traffic.jsonl --name …` (`--no-redact` keeps serial numbers).
 
 **Run** it with `hemslab run lg-therma-v.json`. Pull requests with new profiles are welcome.
 
@@ -115,7 +120,7 @@ From source: `cargo install --git https://github.com/frane/hemslab`. For a NAS t
 
 ## Roadmap
 
-- `hemslab record`: a built-in MITM recorder for any EEBUS device
+- Recording between a device and its energy manager (MITM), to capture what the energy manager writes
 - Quirks per profile, e.g. the Elli Charger 2 ignoring `timePeriod` or rejecting pause without OSCEV
 - E-mobility use cases (EVSECC, EVCC, OPEV, OSCEV) for the wallbox, and batteries
 - Modbus/SunSpec, then OCPP

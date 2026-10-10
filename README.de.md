@@ -59,8 +59,8 @@ Die Strukturen stammen aus [enbility/devices](https://github.com/enbility/device
 
 ## Eigene Geräte
 
-1. **Mitschneiden:** Einen Proxy zwischen Gerät und Energiemanager setzen. Derzeit ist das [elli-eebus-proxy](https://github.com/frane/elli-eebus-proxy) im Sniff-Modus, der `traffic.jsonl` schreibt. Ein eingebautes `hemslab record` für beliebige EEBUS-Geräte kommt als Nächstes.
-2. **Importieren:** `hemslab import traffic.jsonl --name lg-therma-v`. Seriennummern werden durch `X` ersetzt; `--no-redact` behält sie.
+1. **Finden:** `hemslab discover` listet die EEBUS-Geräte im Netz mit ihrer SKI.
+2. **Mitschneiden:** `hemslab record <SKI> --name lg-therma-v --minutes 15`. hemslab verbindet sich als Energiemanager, liest alles und abonniert jedes Feature. **hemslab-recorder** in den EEBUS-Einstellungen des Geräts koppeln. Akzeptiert das Gerät nur einen Energiemanager, den eigenen dafür kurz entfernen. Am Ende entstehen `lg-therma-v.jsonl` (Rohdaten) und `lg-therma-v.json` (Profil), Seriennummern sind geschwärzt. Mitschnitte von elli-eebus-proxy lassen sich mit `hemslab import` einlesen.
 3. **Starten:** `hemslab run lg-therma-v.json`. Pull Requests mit neuen Profilen sind willkommen.
 
 Generische Profile sind TOML-Dateien. Am einfachsten eine aus [`profiles/`](profiles/) kopieren und anpassen.

@@ -169,7 +169,8 @@ fn build(
 
         match payload {
             CmdData::NodeManagementDetailedDiscoveryData(d) if d.device_information.is_some() => {
-                if discovery.is_none() {
+                {
+                    // The latest wins here too: a later discovery is the more complete one.
                     let address = source_address
                         .device
                         .as_ref()
@@ -191,7 +192,10 @@ fn build(
                 continue;
             }
             CmdData::NodeManagementUseCaseData(_) => {
-                use_cases.get_or_insert_with(|| wire::cmd_to_value(cmd));
+                // The latest wins: a recorder writes these as they fill in.
+                if matches!(payload, CmdData::NodeManagementUseCaseData(d) if d.use_case_information.as_ref().is_some_and(|i| !i.is_empty())) {
+                    use_cases = Some(wire::cmd_to_value(cmd));
+                }
                 continue;
             }
             // Bindings, subscriptions and the like describe this capture's peers, not the
@@ -225,17 +229,22 @@ fn build(
         discovery.ok_or("the capture contains no discovery reply from the device")?;
 
     // Identification, for the mDNS record and the listing.
-    let classification = data.iter().find_map(|((_, _, function), value)| {
-        (function == "deviceClassificationManufacturerData").then_some(value)
-    });
-    let (brand, model, serial) = classification
-        .and_then(|value| wire::cmd_from_value(value).ok())
-        .and_then(|cmd| match cmd.data {
-            Some(CmdData::DeviceClassificationManufacturerData(m)) => Some((
-                m.brand_name.or(m.vendor_name).map(|s| s.as_str().to_string()),
-                m.device_name.or(m.device_code).map(|s| s.as_str().to_string()),
-                m.serial_number.map(|s| s.as_str().to_string()),
-            )),
+    // A device may carry several DeviceClassification features, some of them empty: the
+    // first one that names a brand is the one that identifies it.
+    let (brand, model, serial) = data
+        .iter()
+        .filter(|((_, _, function), _)| function == "deviceClassificationManufacturerData")
+        .filter_map(|(_, value)| wire::cmd_from_value(value).ok())
+        .find_map(|cmd| match cmd.data {
+            Some(CmdData::DeviceClassificationManufacturerData(m))
+                if m.brand_name.is_some() || m.vendor_name.is_some() =>
+            {
+                Some((
+                    m.brand_name.or(m.vendor_name).map(|s| s.as_str().to_string()),
+                    m.device_name.or(m.device_code).map(|s| s.as_str().to_string()),
+                    m.serial_number.map(|s| s.as_str().to_string()),
+                ))
+            }
             _ => None,
         })
         .unwrap_or((None, None, None));

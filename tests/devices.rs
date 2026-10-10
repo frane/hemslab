@@ -198,3 +198,38 @@ async fn the_ui_sets_a_limit_through_the_test_energy_manager() {
     }
     panic!("the limit never reached the wallbox");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_recorded_device_imports_as_the_same_device() {
+    let dir = tempfile::tempdir().unwrap();
+    let (started, stop) = start("elli-charger-2", 47_814, dir.path()).await;
+    let capture = dir.path().join("elli.jsonl");
+    let (_stop_rec, stop_rx) = watch::channel(false);
+    let written = hemslab::record::record(
+        hemslab::record::Options {
+            ski: started.ski,
+            address: Some(([127, 0, 0, 1], started.port).into()),
+            state_dir: dir.path().join("recorder"),
+            port: 47_815,
+            output: capture.clone(),
+            duration: Some(Duration::from_secs(5)),
+        },
+        stop_rx,
+    )
+    .await
+    .unwrap();
+    assert!(written > 10, "recorded {written} messages");
+
+    let options = hemslab::capture::ImportOptions {
+        name: "elli-again".into(),
+        description: None,
+        side: None,
+        redact: true,
+        max_timeline_s: 60.0,
+    };
+    let (profile, report) = hemslab::capture::import(&[capture.as_path()], &options).unwrap();
+    assert_eq!(profile.brand.as_deref(), Some("Elli"));
+    assert_eq!(report.use_cases, 4, "LPC, MPC, EVSECC and EV charging summary");
+    assert_eq!(report.features, 10);
+    let _ = stop.send(true);
+}

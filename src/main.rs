@@ -54,6 +54,28 @@ enum Command {
     },
     /// List the built-in profiles.
     Profiles,
+    /// List EEBUS devices announcing themselves on the network.
+    Discover {
+        #[arg(long, default_value_t = 5)]
+        seconds: u64,
+    },
+    /// Record a real device: connect as an energy manager, read and subscribe to
+    /// everything, and write a capture. Ctrl-C stops and turns it into a profile.
+    Record {
+        /// The device: `SKI` (found via mDNS) or `SKI@host:port`.
+        device: String,
+        /// Profile name, e.g. `lg-therma-v`. Writes `<name>.jsonl` and `<name>.json`.
+        #[arg(long)]
+        name: String,
+        /// Stop after this many minutes (default: Ctrl-C).
+        #[arg(long)]
+        minutes: Option<u64>,
+        #[arg(long, env = "HEMSLAB_STATE", default_value = "state")]
+        state_dir: PathBuf,
+        /// SHIP port of the recorder.
+        #[arg(long, default_value_t = 4799)]
+        port: u16,
+    },
     /// Show what a profile contains.
     Show { profile: String },
     /// Turn a capture into a replay profile.
@@ -112,6 +134,14 @@ async fn main() {
             list();
             Ok(())
         }
+        Command::Discover { seconds } => discover(seconds),
+        Command::Record {
+            device,
+            name,
+            minutes,
+            state_dir,
+            port,
+        } => record(device, name, minutes, state_dir, port).await,
         Command::Show { profile } => show(&profile),
         Command::Import {
             captures,
@@ -310,4 +340,70 @@ fn import(
         println!("redacted: {}", report.redacted.join(", "));
     }
     Ok(())
+}
+
+fn discover(seconds: u64) -> Result<(), String> {
+    println!("Looking for EEBUS devices for {seconds} s…");
+    let found = hemslab::record::discover(seconds)?;
+    if found.is_empty() {
+        println!("Nothing found. mDNS needs the same network (and host networking in Docker).");
+    }
+    for node in found {
+        let r = &node.record;
+        println!(
+            "{}  {:<16} {:<24} {}",
+            node.ski,
+            r.brand.as_deref().unwrap_or("?"),
+            r.model.as_deref().unwrap_or("?"),
+            node.socket_address().map(|a| a.to_string()).unwrap_or_default()
+        );
+    }
+    Ok(())
+}
+
+async fn record(
+    device: String,
+    name: String,
+    minutes: Option<u64>,
+    state_dir: PathBuf,
+    port: u16,
+) -> Result<(), String> {
+    use std::net::ToSocketAddrs;
+    let (ski, address) = match device.split_once('@') {
+        Some((ski, address)) => (
+            ski,
+            Some(
+                address
+                    .to_socket_addrs()
+                    .ok()
+                    .and_then(|mut a| a.next())
+                    .ok_or_else(|| format!("`{address}` is not host:port"))?,
+            ),
+        ),
+        None => (device.as_str(), None),
+    };
+    let ski: Ski = ski.parse().map_err(|e| format!("{ski}: {e}"))?;
+    let capture = PathBuf::from(format!("{name}.jsonl"));
+    let (stop_tx, stop_rx) = watch::channel(false);
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        let _ = stop_tx.send(true);
+    });
+    let written = hemslab::record::record(
+        hemslab::record::Options {
+            ski,
+            address,
+            state_dir,
+            port,
+            output: capture.clone(),
+            duration: minutes.map(|m| std::time::Duration::from_secs(m * 60)),
+        },
+        stop_rx,
+    )
+    .await?;
+    println!("\n{written} messages recorded to {}", capture.display());
+    if written == 0 {
+        return Ok(());
+    }
+    import(&[capture], name, None, None, true, 3600.0, None)
 }

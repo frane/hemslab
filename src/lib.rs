@@ -9,3 +9,4 @@ pub mod wire;
 pub mod view;
 pub mod cem;
 pub mod ui;
+pub mod record;

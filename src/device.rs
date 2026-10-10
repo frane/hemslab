@@ -391,7 +391,7 @@ fn txt_value(text: &str) -> String {
 }
 
 /// The configured address, or the one the default route leaves by.
-fn announce_addresses(configured: Option<IpAddr>) -> Vec<IpAddr> {
+pub fn announce_addresses(configured: Option<IpAddr>) -> Vec<IpAddr> {
     if let Some(ip) = configured {
         return vec![ip];
     }
